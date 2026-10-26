@@ -1,296 +1,48 @@
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
+import * as THREE from 'three'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js'
 
-// ===== Canvas 引用 =====
+// ===== Three.js 核心 =====
 const stage = ref(null)
-let ctx = null
-let rafId = null
-let dpr = 1
-let W = 0, H = 0, CX = 0, CY = 0, scale = 1
-const MAX_ORBIT_RADIUS = 460
+let scene, camera, renderer, labelRenderer, controls
+let animationId = null
+let clock
 
-// ===== 行星数据 =====
-const SUN = { radius: 40, color: '#ffcc33' }
+// 场景内对象
+const planetMeshes = []
+let sunMesh, sunLight, moonMesh, rocketGroup
+let starsGroup
+
+// ===== 行星数据（3D 单位，人为分层，保证在视野内） =====
+// 轨道半径是 Three.js 世界单位，相机距离 ~250，FOV 50
+const SUN_DATA = { radius: 12, color: 0xffcc33 }
 
 const planets = reactive([
-  { name: '水星', color: '#b0a8a0', size: 7,  orbit: 85,  period: 0.24, emoji: '☿️', desc: '最小最快的行星，一年只有88天！', angle: 0, _x: 0, _y: 0, _r: 0 },
-  { name: '金星', color: '#e8c875', size: 11, orbit: 125, period: 0.62, emoji: '♀️', desc: '夜空中最亮的星星，傍晚就能看到它~', angle: 0, _x: 0, _y: 0, _r: 0 },
-  { name: '地球', color: '#4aa3ff', size: 12, orbit: 165, period: 1.0,  emoji: '🌍', desc: '这是我们的家！蓝色的水球🌊', angle: 0, _x: 0, _y: 0, _r: 0 },
-  { name: '火星', color: '#e55a3a', size: 9,  orbit: 205, period: 1.88, emoji: '🔴', desc: '红色的星球，上面有最高的山！', angle: 0, _x: 0, _y: 0, _r: 0 },
-  { name: '木星', color: '#e8a85c', size: 26, orbit: 275, period: 11.86, emoji: '♃', desc: '最大的行星，条纹好多，还有个大红斑！', angle: 0, _x: 0, _y: 0, _r: 0 },
-  { name: '土星', color: '#e8d088', size: 22, orbit: 345, period: 29.46, emoji: '🪐', desc: '有漂亮光环的行星！最特别的那个✨', angle: 0, _x: 0, _y: 0, _r: 0, hasRing: true },
-  { name: '天王星', color: '#9ce0e8', size: 16, orbit: 400, period: 84.0,  emoji: '♅', desc: '躺着转的冰蓝行星，好Q哦！', angle: 0, _x: 0, _y: 0, _r: 0 },
-  { name: '海王星', color: '#3a7ae0', size: 15, orbit: 455, period: 164.8, emoji: '♆', desc: '最远的行星，深蓝色好漂亮！', angle: 0, _x: 0, _y: 0, _r: 0 }
+  { name: '水星', color: 0xb0a8a0, size: 1.2, orbit: 22, period: 0.24, emoji: '☿️', desc: '最小最快的行星，一年只有88天！', angle: Math.random() * Math.PI * 2 },
+  { name: '金星', color: 0xe8c875, size: 1.8, orbit: 32, period: 0.62, emoji: '♀️', desc: '夜空中最亮的星星，傍晚就能看到它~', angle: Math.random() * Math.PI * 2 },
+  { name: '地球', color: 0x4aa3ff, size: 2.0, orbit: 42, period: 1.0,  emoji: '🌍', desc: '这是我们的家！蓝色的水球🌊', angle: Math.random() * Math.PI * 2, hasMoon: true },
+  { name: '火星', color: 0xe55a3a, size: 1.5, orbit: 52, period: 1.88, emoji: '🔴', desc: '红色的星球，上面有最高的山！', angle: Math.random() * Math.PI * 2 },
+  { name: '木星', color: 0xe8a85c, size: 4.5, orbit: 72, period: 11.86, emoji: '♃', desc: '最大的行星，条纹好多，还有个大红斑！', angle: Math.random() * Math.PI * 2 },
+  { name: '土星', color: 0xe8d088, size: 3.8, orbit: 92, period: 29.46, emoji: '🪐', desc: '有漂亮光环的行星！最特别的那个✨', angle: Math.random() * Math.PI * 2, hasRing: true },
+  { name: '天王星', color: 0x9ce0e8, size: 2.8, orbit: 110, period: 84.0,  emoji: '♅', desc: '躺着转的冰蓝行星，好Q哦！', angle: Math.random() * Math.PI * 2 },
+  { name: '海王星', color: 0x3a7ae0, size: 2.6, orbit: 128, period: 164.8, emoji: '♆', desc: '最远的行星，深蓝色好漂亮！', angle: Math.random() * Math.PI * 2 }
 ])
 
-// 月球（绕地球）
-const moon = reactive({ distance: 22, size: 3, angle: 0, speed: 12 })
+// 最远轨道半径，用于保证可见
+const MAX_ORBIT = 128
 
-// ===== 星空 =====
-const stars = []
-function initStars() {
-  stars.length = 0
-  const count = Math.floor((W * H) / 6000)
-  for (let i = 0; i < count; i++) {
-    stars.push({
-      x: Math.random() * W,
-      y: Math.random() * H,
-      r: Math.random() * 1.3 + 0.3,
-      alpha: Math.random(),
-      alphaDir: Math.random() > 0.5 ? 1 : -1,
-      speed: Math.random() * 0.02 + 0.005
-    })
-  }
-}
-
-// ===== 状态（响应式） =====
+// ===== 响应式 UI 状态 =====
 const speedMultiplier = ref(1)
 const speedLabel = computed(() => speedMultiplier.value.toFixed(1) + 'x')
-
-// 信息卡片
 const selectedPlanet = ref(null)
 const cardVisible = computed(() => selectedPlanet.value !== null)
 
 // 火箭
-const rocket = reactive({ active: false, t: 0, peakOffset: 0 })
+const rocketState = reactive({ active: false, t: 0 })
 
-// 太阳脉动
-let sunPulse = 0
-
-// ===== 颜色辅助 =====
-function lightenColor(hex, percent) {
-  const num = parseInt(hex.replace('#', ''), 16)
-  const r = Math.min(255, (num >> 16) + percent)
-  const g = Math.min(255, ((num >> 8) & 0xff) + percent)
-  const b = Math.min(255, (num & 0xff) + percent)
-  return `rgb(${r},${g},${b})`
-}
-
-// ===== 绘制 =====
-function drawStars() {
-  for (const s of stars) {
-    s.alpha += s.alphaDir * s.speed
-    if (s.alpha > 1) { s.alpha = 1; s.alphaDir = -1 }
-    if (s.alpha < 0.2) { s.alpha = 0.2; s.alphaDir = 1 }
-    ctx.beginPath()
-    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2)
-    ctx.fillStyle = `rgba(255,255,255,${s.alpha})`
-    ctx.fill()
-  }
-}
-
-function drawSun() {
-  sunPulse += 0.03
-  const pulseSize = Math.sin(sunPulse) * 3
-  const glow1 = ctx.createRadialGradient(CX, CY, SUN.radius * scale, CX, CY, (SUN.radius + 50) * scale)
-  glow1.addColorStop(0, 'rgba(255,200,60,0.45)')
-  glow1.addColorStop(1, 'rgba(255,200,60,0)')
-  ctx.fillStyle = glow1
-  ctx.beginPath()
-  ctx.arc(CX, CY, (SUN.radius + 50) * scale + pulseSize, 0, Math.PI * 2)
-  ctx.fill()
-
-  const sunGrad = ctx.createRadialGradient(CX - 8 * scale, CY - 8 * scale, 0, CX, CY, SUN.radius * scale)
-  sunGrad.addColorStop(0, '#fff4a0')
-  sunGrad.addColorStop(0.5, '#ffcc33')
-  sunGrad.addColorStop(1, '#ff8a22')
-  ctx.beginPath()
-  ctx.arc(CX, CY, SUN.radius * scale + pulseSize * 0.5, 0, Math.PI * 2)
-  ctx.fillStyle = sunGrad
-  ctx.fill()
-}
-
-function drawOrbits() {
-  ctx.save()
-  ctx.setLineDash([3, 6])
-  for (const p of planets) {
-    ctx.beginPath()
-    ctx.arc(CX, CY, p.orbit * scale, 0, Math.PI * 2)
-    ctx.strokeStyle = 'rgba(255,255,255,0.15)'
-    ctx.lineWidth = 1
-    ctx.stroke()
-  }
-  ctx.restore()
-}
-
-function drawPlanet(p) {
-  const x = CX + Math.cos(p.angle) * p.orbit * scale
-  const y = CY + Math.sin(p.angle) * p.orbit * scale
-  const r = p.size * scale
-
-  // 土星环
-  if (p.hasRing) {
-    ctx.save()
-    ctx.translate(x, y)
-    ctx.scale(1, 0.35)
-    ctx.beginPath()
-    ctx.arc(0, 0, r * 1.7, 0, Math.PI * 2)
-    ctx.strokeStyle = 'rgba(230,210,150,0.6)'
-    ctx.lineWidth = r * 0.25
-    ctx.stroke()
-    ctx.beginPath()
-    ctx.arc(0, 0, r * 2.0, 0, Math.PI * 2)
-    ctx.strokeStyle = 'rgba(230,210,150,0.35)'
-    ctx.lineWidth = r * 0.12
-    ctx.stroke()
-    ctx.restore()
-  }
-
-  // 本体
-  const grad = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, 0, x, y, r)
-  grad.addColorStop(0, lightenColor(p.color, 40))
-  grad.addColorStop(1, p.color)
-  ctx.beginPath()
-  ctx.arc(x, y, r, 0, Math.PI * 2)
-  ctx.fillStyle = grad
-  ctx.fill()
-
-  // 高光
-  ctx.beginPath()
-  ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.25, 0, Math.PI * 2)
-  ctx.fillStyle = 'rgba(255,255,255,0.4)'
-  ctx.fill()
-
-  // 地球的月球
-  if (p.name === '地球') {
-    const mx = x + Math.cos(moon.angle) * moon.distance * scale
-    const my = y + Math.sin(moon.angle) * moon.distance * scale
-    ctx.beginPath()
-    ctx.arc(mx, my, moon.size * scale, 0, Math.PI * 2)
-    ctx.fillStyle = '#d8d4cc'
-    ctx.fill()
-    ctx.beginPath()
-    ctx.arc(mx - moon.size * scale * 0.3, my - moon.size * scale * 0.3, moon.size * scale * 0.3, 0, Math.PI * 2)
-    ctx.fillStyle = 'rgba(255,255,255,0.4)'
-    ctx.fill()
-  }
-
-  p._x = x; p._y = y; p._r = r
-}
-
-function drawRocket() {
-  if (!rocket.active) return
-  rocket.t += 0.012
-  if (rocket.t >= 1) { rocket.active = false; return }
-
-  const t = rocket.t
-  const startX = CX, startY = H - 30
-  const endX = CX + (t - 0.5) * W * 0.6
-  const endY = -40
-  const controlX = CX + rocket.peakOffset
-  const controlY = H * 0.15
-  const x = (1 - t) * (1 - t) * startX + 2 * (1 - t) * t * controlX + t * t * endX
-  const y = (1 - t) * (1 - t) * startY + 2 * (1 - t) * t * controlY + t * t * endY
-  const angle = Math.atan2(endY - startY, endX - startX)
-
-  ctx.save()
-  ctx.translate(x, y)
-  ctx.rotate(angle)
-  const flameLen = 10 + Math.sin(Date.now() * 0.03) * 4
-  ctx.fillStyle = '#ff9a3a'
-  ctx.beginPath()
-  ctx.moveTo(-8, 0); ctx.lineTo(-8 - flameLen, -4); ctx.lineTo(-8 - flameLen * 1.5, 0); ctx.lineTo(-8 - flameLen, 4); ctx.closePath(); ctx.fill()
-  ctx.fillStyle = '#ffdd55'
-  ctx.beginPath()
-  ctx.moveTo(-8, 0); ctx.lineTo(-8 - flameLen * 0.6, -2); ctx.lineTo(-8 - flameLen * 0.9, 0); ctx.lineTo(-8 - flameLen * 0.6, 2); ctx.closePath(); ctx.fill()
-  ctx.fillStyle = '#ffffff'; ctx.fillRect(-8, -5, 20, 10)
-  ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(6, -5); ctx.lineTo(6, 5); ctx.closePath(); ctx.fillStyle = '#e55a3a'; ctx.fill()
-  ctx.beginPath(); ctx.arc(0, 0, 2.5, 0, Math.PI * 2); ctx.fillStyle = '#4aa3ff'; ctx.fill()
-  ctx.fillStyle = '#e55a3a'
-  ctx.beginPath(); ctx.moveTo(-8, -5); ctx.lineTo(-13, -10); ctx.lineTo(-8, -8); ctx.closePath(); ctx.fill()
-  ctx.beginPath(); ctx.moveTo(-8, 5); ctx.lineTo(-13, 10); ctx.lineTo(-8, 8); ctx.closePath(); ctx.fill()
-  ctx.restore()
-}
-
-// ===== 主动画 =====
-function animate() {
-  const bg = ctx.createLinearGradient(0, 0, 0, H)
-  bg.addColorStop(0, '#0a0520'); bg.addColorStop(0.5, '#05010f'); bg.addColorStop(1, '#0a0520')
-  ctx.fillStyle = bg
-  ctx.fillRect(0, 0, W, H)
-
-  drawStars()
-  drawOrbits()
-  drawSun()
-
-  for (const p of planets) {
-    p.angle += (1 / p.period) * 0.008 * speedMultiplier.value
-    drawPlanet(p)
-  }
-  moon.angle += (moon.speed / planets[2].period) * 0.008 * speedMultiplier.value
-  drawRocket()
-
-  rafId = requestAnimationFrame(animate)
-}
-
-// ===== 尺寸 =====
-function resize() {
-  dpr = Math.min(window.devicePixelRatio || 1, 2)
-  W = window.innerWidth; H = window.innerHeight
-  stage.value.width = W * dpr
-  stage.value.height = H * dpr
-  stage.value.style.width = W + 'px'
-  stage.value.style.height = H + 'px'
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  CX = W / 2; CY = H / 2
-  scale = Math.min(W, H) / (MAX_ORBIT_RADIUS + 60)
-  initStars()
-}
-
-// ===== 交互 =====
-function getTapPos(e) {
-  const rect = stage.value.getBoundingClientRect()
-  const t = e.touches ? e.touches[0] : e
-  return { x: t.clientX - rect.left, y: t.clientY - rect.top }
-}
-
-function onCanvasTap(e) {
-  e.preventDefault?.()
-  const { x, y } = getTapPos(e)
-  // 从外向内检测
-  for (let i = planets.length - 1; i >= 0; i--) {
-    const p = planets[i]
-    if (!p._x) continue
-    if (Math.hypot(x - p._x, y - p._y) < p._r + 12) {
-      playDing()
-      selectedPlanet.value = p
-      return
-    }
-  }
-  selectedPlanet.value = null
-}
-
-function closeCard() { selectedPlanet.value = null }
-
-function onSpeedInput(e) {
-  speedMultiplier.value = parseFloat(e.target.value)
-}
-
-function launchRocket() {
-  rocket.active = true
-  rocket.t = 0
-  rocket.peakOffset = Math.random() * 60 + 40
-  playDing()
-}
-
-function reset() {
-  planets.forEach(p => { p.angle = Math.random() * Math.PI * 2 })
-  moon.angle = 0
-  speedMultiplier.value = 1
-  rocket.active = false
-  selectedPlanet.value = null
-  // 同步滑块
-  const slider = document.querySelector('#speedSlider')
-  if (slider) slider.value = 1
-}
-
-// 快捷按钮
-function selectChip(idx) {
-  playDing()
-  selectedPlanet.value = planets[idx]
-}
-
-// ===== 音效（Web Audio API） =====
+// ===== 音效 =====
 let audioCtx = null
 function playDing() {
   try {
@@ -307,33 +59,329 @@ function playDing() {
   } catch (e) { /* 静默 */ }
 }
 
+// ===== Three.js 初始化 =====
+function initThree() {
+  const container = stage.value
+  const W = container.clientWidth
+  const H = container.clientHeight
+
+  // Scene
+  scene = new THREE.Scene()
+  scene.background = new THREE.Color(0x05010f)
+
+  // Camera（透视投影，距离够远保证所有星球在视野内）
+  camera = new THREE.PerspectiveCamera(50, W / H, 0.1, 1000)
+  const camDist = MAX_ORBIT * 2.2 + 30 // 相机距离 ≈ 292，远大于最远轨道
+  camera.position.set(camDist * 0.55, camDist * 0.5, camDist * 0.55) // 斜角俯视
+  camera.lookAt(0, 0, 0)
+
+  // WebGL Renderer
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+  renderer.setSize(W, H)
+  renderer.outputColorSpace = THREE.SRGBColorSpace
+  container.appendChild(renderer.domElement)
+
+  // CSS2D Renderer（用于星球名称标签）
+  labelRenderer = new CSS2DRenderer()
+  labelRenderer.setSize(W, H)
+  labelRenderer.domElement.style.position = 'absolute'
+  labelRenderer.domElement.style.top = '0'
+  labelRenderer.domElement.style.left = '0'
+  labelRenderer.domElement.style.pointerEvents = 'none'
+  container.appendChild(labelRenderer.domElement)
+
+  // OrbitControls — 鼠标拖拽旋转视角，滚轮缩放
+  controls = new OrbitControls(camera, renderer.domElement)
+  controls.enableDamping = true
+  controls.dampingFactor = 0.08
+  controls.minDistance = 40        // 最近能缩到多近
+  controls.maxDistance = 600      // 最远能拉到多远
+  controls.maxPolarAngle = Math.PI // 允许从下往上看
+  controls.autoRotate = false
+  controls.target.set(0, 0, 0)
+
+  // 光源
+  sunLight = new THREE.PointLight(0xffffff, 2.5, 0, 0) // 点光源（太阳发光）
+  sunLight.position.set(0, 0, 0)
+  scene.add(sunLight)
+  scene.add(new THREE.AmbientLight(0x404060, 0.35)) // 弱环境光，背光面不会全黑
+
+  clock = new THREE.Clock()
+
+  buildScene()
+}
+
+// ===== 构建场景：太阳、轨道、行星、星空 =====
+function buildScene() {
+  // --- 太阳 ---
+  const sunGeo = new THREE.SphereGeometry(SUN_DATA.radius, 48, 48)
+  const sunMat = new THREE.MeshBasicMaterial({ color: SUN_DATA.color })
+  sunMesh = new THREE.Mesh(sunGeo, sunMat)
+  scene.add(sunMesh)
+
+  // 太阳光晕（更大的半透明球）
+  const haloGeo = new THREE.SphereGeometry(SUN_DATA.radius * 1.5, 32, 32)
+  const haloMat = new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.25, side: THREE.BackSide })
+  scene.add(new THREE.Mesh(haloGeo, haloMat))
+
+  // --- 轨道线（虚线环） ---
+  for (const p of planets) {
+    const orbitGeo = new THREE.RingGeometry(p.orbit - 0.08, p.orbit + 0.08, 128)
+    const orbitMat = new THREE.MeshBasicMaterial({ color: 0x8888aa, side: THREE.DoubleSide, transparent: true, opacity: 0.25 })
+    const ring = new THREE.Mesh(orbitGeo, orbitMat)
+    ring.rotation.x = Math.PI / 2
+    scene.add(ring)
+  }
+
+  // --- 行星 ---
+  for (const p of planets) {
+    const geo = new THREE.SphereGeometry(p.size, 48, 48)
+    const mat = new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.7, metalness: 0.1 })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.userData = { planet: p }
+    scene.add(mesh)
+
+    // 土星环
+    if (p.hasRing) {
+      const ringGeo = new THREE.RingGeometry(p.size * 1.5, p.size * 2.2, 64)
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0xe0c880, side: THREE.DoubleSide, transparent: true, opacity: 0.7 })
+      const ring = new THREE.Mesh(ringGeo, ringMat)
+      ring.rotation.x = Math.PI / 2.2
+      mesh.add(ring)
+    }
+
+    // 月球（地球子对象）
+    if (p.hasMoon) {
+      const moonGeo = new THREE.SphereGeometry(0.5, 24, 24)
+      const moonMat = new THREE.MeshStandardMaterial({ color: 0xddddcc, roughness: 0.9 })
+      moonMesh = new THREE.Mesh(moonGeo, moonMat)
+      moonMesh.position.set(p.orbit * 0 + 5, 0, p.orbit * 0 + 5)
+      mesh.add(moonMesh)
+      // 在 planet 上存月球子对象引用，后面手动更新位置
+      p._moonParent = mesh
+    }
+
+    // 星球名称标签（CSS2D）
+    const labelDiv = document.createElement('div')
+    labelDiv.textContent = p.name
+    labelDiv.style.cssText = 'color:#ffd36b;font-size:12px;font-weight:600;text-shadow:0 0 6px rgba(0,0,0,0.8);pointer-events:none;'
+    const label = new CSS2DObject(labelDiv)
+    label.position.set(0, p.size + 1.5, 0)
+    mesh.add(label)
+
+    planetMeshes.push(mesh)
+  }
+
+  // --- 星空（球壳粒子） ---
+  const starCount = 4000
+  const starGeo = new THREE.BufferGeometry()
+  const positions = new Float32Array(starCount * 3)
+  for (let i = 0; i < starCount; i++) {
+    const r = 450 + Math.random() * 200 // 分布在 450-650 半径的球壳上
+    const theta = Math.random() * Math.PI * 2
+    const phi = Math.acos(2 * Math.random() - 1)
+    positions[i*3]   = r * Math.sin(phi) * Math.cos(theta)
+    positions[i*3+1] = r * Math.cos(phi)
+    positions[i*3+2] = r * Math.sin(phi) * Math.sin(theta)
+  }
+  starGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.5, sizeAttenuation: false, transparent: true, opacity: 0.85 })
+  starsGroup = new THREE.Points(starGeo, starMat)
+  scene.add(starsGroup)
+
+  // --- 火箭（初始不可见） ---
+  rocketGroup = buildRocket()
+  rocketGroup.visible = false
+  scene.add(rocketGroup)
+}
+
+// 构建 3D 火箭模型
+function buildRocket() {
+  const group = new THREE.Group()
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.3, roughness: 0.4 })
+  const redMat  = new THREE.MeshStandardMaterial({ color: 0xe55a3a, metalness: 0.2, roughness: 0.5 })
+  const blueMat = new THREE.MeshStandardMaterial({ color: 0x4aa3ff, metalness: 0.1, roughness: 0.2 })
+
+  // 机身（胶囊形 = 圆柱 + 圆锥头）
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 3.5, 20), bodyMat)
+  group.add(body)
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.8, 1.4, 20), redMat)
+  nose.position.y = 2.45
+  group.add(nose)
+  // 尾翼
+  const finGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, -1.6, 0),
+    new THREE.Vector3(-1.2, -2.6, 0),
+    new THREE.Vector3(0, -2.2, 0)
+  ])
+  for (const angle of [0, Math.PI/2, Math.PI, Math.PI*1.5]) {
+    const fin = new THREE.Mesh(finGeo, redMat)
+    fin.rotation.y = angle
+    group.add(fin)
+  }
+  // 窗户
+  const window = new THREE.Mesh(new THREE.CircleGeometry(0.35, 20), blueMat)
+  window.position.set(0, 0.5, 0.81)
+  group.add(window)
+
+  // 尾焰（用粒子/简单圆锥代替，发射时再处理）
+  const flame = new THREE.Mesh(
+    new THREE.ConeGeometry(0.6, 1.8, 16),
+    new THREE.MeshBasicMaterial({ color: 0xff9a3a, transparent: true, opacity: 0.85 })
+  )
+  flame.position.y = -2.5
+  flame.name = 'flame'
+  group.add(flame)
+
+  return group
+}
+
+// ===== 动画循环 =====
+function animate() {
+  animationId = requestAnimationFrame(animate)
+  const delta = clock.getDelta()
+
+  // 太阳自转
+  sunMesh.rotation.y += delta * 0.15
+
+  // 星空缓慢旋转
+  starsGroup.rotation.y += delta * 0.005
+
+  // 行星公转
+  for (let i = 0; i < planets.length; i++) {
+    const p = planets[i]
+    p.angle += (1 / p.period) * delta * 0.5 * speedMultiplier.value
+    const mesh = planetMeshes[i]
+    mesh.position.x = Math.cos(p.angle) * p.orbit
+    mesh.position.z = Math.sin(p.angle) * p.orbit
+    mesh.rotation.y += delta * 0.3
+  }
+
+  // 月球绕地球手动更新
+  const earthIdx = 2
+  const earthMesh = planetMeshes[earthIdx]
+  if (planets[earthIdx]._moonParent) {
+    const moon = planets[earthIdx]._moonParent.children.find(c => c.geometry?.type === 'SphereGeometry' && c.geometry.parameters.radius === 0.5)
+    if (moon) {
+      const moonAngle = clock.elapsedTime * 2 * speedMultiplier.value
+      moon.position.x = Math.cos(moonAngle) * 5
+      moon.position.z = Math.sin(moonAngle) * 5
+    }
+  }
+
+  // 火箭
+  if (rocketState.active) updateRocket(delta)
+
+  controls.update()
+  renderer.render(scene, camera)
+  labelRenderer.render(scene, camera)
+}
+
+function updateRocket(delta) {
+  rocketState.t += delta * 0.6
+  if (rocketState.t >= 1) {
+    rocketState.active = false
+    rocketGroup.visible = false
+    return
+  }
+  const t = rocketState.t
+  // 从相机前方飞入，绕太阳转一圈后飞出
+  const r = 40 + t * 150
+  const angle = t * Math.PI * 2 // 绕一圈
+  rocketGroup.position.set(Math.cos(angle) * r, 10 + Math.sin(t * Math.PI) * 15, Math.sin(angle) * r)
+  rocketGroup.lookAt(0, 10, 0) // 朝向太阳
+  rocketGroup.visible = true
+  // 尾焰脉动
+  const flame = rocketGroup.getObjectByName('flame')
+  if (flame) {
+    flame.scale.y = 1 + Math.sin(Date.now() * 0.02) * 0.3
+    flame.material.opacity = 0.7 + Math.sin(Date.now() * 0.015) * 0.2
+  }
+}
+
+// ===== 交互：点击行星 =====
+const raycaster = new THREE.Raycaster()
+const pointer = new THREE.Vector2()
+
+function onPointerDown(e) {
+  const rect = renderer.domElement.getBoundingClientRect()
+  const clientX = e.clientX ?? (e.touches?.[0]?.clientX)
+  const clientY = e.clientY ?? (e.touches?.[0]?.clientY)
+  if (clientX == null) return
+  pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1
+  pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1
+  raycaster.setFromCamera(pointer, camera)
+  const hits = raycaster.intersectObjects(planetMeshes, false)
+  if (hits.length > 0) {
+    const p = hits[0].object.userData.planet
+    playDing()
+    selectedPlanet.value = p
+  } else {
+    selectedPlanet.value = null
+  }
+}
+
+function closeCard() { selectedPlanet.value = null }
+function selectChip(idx) { playDing(); selectedPlanet.value = planets[idx] }
+
+function onSpeedInput(e) { speedMultiplier.value = parseFloat(e.target.value) }
+
+function launchRocket() {
+  rocketState.active = true
+  rocketState.t = 0
+  playDing()
+}
+
+function reset() {
+  planets.forEach(p => { p.angle = Math.random() * Math.PI * 2 })
+  speedMultiplier.value = 1
+  rocketState.active = false
+  selectedPlanet.value = null
+  controls.target.set(0, 0, 0)
+  const camDist = MAX_ORBIT * 2.2 + 30
+  camera.position.set(camDist * 0.55, camDist * 0.5, camDist * 0.55)
+  controls.update()
+  const slider = document.querySelector('#speedSlider')
+  if (slider) slider.value = 1
+}
+
+// ===== 尺寸自适应 =====
+function resize() {
+  const W = stage.value.clientWidth
+  const H = stage.value.clientHeight
+  camera.aspect = W / H
+  camera.updateProjectionMatrix()
+  renderer.setSize(W, H)
+  labelRenderer.setSize(W, H)
+}
+
 // ===== 生命周期 =====
 onMounted(() => {
-  ctx = stage.value.getContext('2d')
-  resize()
-  planets.forEach(p => { p.angle = Math.random() * Math.PI * 2 })
+  initThree()
   animate()
   window.addEventListener('resize', resize)
+  renderer.domElement.addEventListener('click', onPointerDown)
 })
 
 onUnmounted(() => {
-  if (rafId) cancelAnimationFrame(rafId)
+  cancelAnimationFrame(animationId)
   window.removeEventListener('resize', resize)
+  renderer?.domElement.removeEventListener('click', onPointerDown)
+  controls?.dispose()
+  renderer?.dispose()
 })
 </script>
 
 <template>
   <div class="solar-system">
-    <!-- 标题 -->
     <header class="title-bar">
-      <h1>🪐 宝贝的太阳系</h1>
-      <p class="subtitle">点一点星球，转一转看看！</p>
+      <h1>🪐 宝贝的太阳系（3D）</h1>
+      <p class="subtitle">鼠标按住旋转视角 · 滚轮缩放 · 点星球看介绍</p>
     </header>
 
-    <!-- Canvas -->
-    <canvas ref="stage" @click="onCanvasTap" @touchstart="onCanvasTap"></canvas>
+    <div ref="stage" class="stage"></div>
 
-    <!-- 控制面板 -->
     <aside class="controls">
       <div class="control-group">
         <label for="speedSlider">⏩ 公转速度</label>
@@ -341,10 +389,9 @@ onUnmounted(() => {
         <span class="speed-label">{{ speedLabel }}</span>
       </div>
       <button class="big-btn" @click="launchRocket">🚀 发射火箭</button>
-      <button class="big-btn" @click="reset">🔄 重置</button>
+      <button class="big-btn" @click="reset">🔄 重置视角</button>
     </aside>
 
-    <!-- 信息卡片 -->
     <Transition name="card">
       <div v-if="cardVisible" class="info-card">
         <div class="info-icon">{{ selectedPlanet.emoji }}</div>
@@ -354,7 +401,6 @@ onUnmounted(() => {
       </div>
     </Transition>
 
-    <!-- 底部快捷按钮 -->
     <nav class="planet-chips">
       <button
         v-for="(p, i) in planets"
@@ -364,14 +410,18 @@ onUnmounted(() => {
         @click="selectChip(i)"
       >{{ p.emoji }} {{ p.name }}</button>
     </nav>
+
+    <div class="hint">🎯 鼠标左键拖拽旋转视角 · 右键平移 · 滚轮缩放</div>
   </div>
 </template>
 
 <style scoped>
 .solar-system { position: fixed; inset: 0; width: 100%; height: 100%; }
+.stage { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
+.stage:active { cursor: grabbing; }
 .title-bar { position: fixed; top: 0; left: 0; right: 0; padding: 14px 20px 6px; text-align: center; z-index: 10; pointer-events: none; }
 .title-bar h1 { font-size: 1.6rem; font-weight: 700; background: linear-gradient(90deg, #ffd36b, #ff8ad4, #7ad1ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-.title-bar .subtitle { font-size: 0.8rem; color: #aaa; margin-top: 2px; }
+.title-bar .subtitle { font-size: 0.78rem; color: #999; margin-top: 2px; }
 .controls { position: fixed; top: 70px; right: 14px; display: flex; flex-direction: column; gap: 10px; z-index: 10; }
 .control-group { background: rgba(255,255,255,0.08); backdrop-filter: blur(8px); border-radius: 16px; padding: 10px 14px; display: flex; flex-direction: column; gap: 4px; }
 .control-group label { font-size: 0.8rem; color: #ddd; }
@@ -391,10 +441,12 @@ onUnmounted(() => {
 .planet-chips .chip { padding: 6px 14px; font-size: 0.75rem; border-radius: 16px; border: none; cursor: pointer; background: rgba(255,255,255,0.1); color: #fff; backdrop-filter: blur(6px); transition: all 0.15s; }
 .planet-chips .chip:active { transform: scale(0.92); }
 .planet-chips .chip.highlight { background: rgba(255,211,107,0.5); color: #2a1055; }
+.hint { position: fixed; bottom: 60px; right: 14px; font-size: 0.7rem; color: #666; z-index: 5; pointer-events: none; }
 @media (max-width: 600px) {
   .title-bar h1 { font-size: 1.3rem; }
   .controls { top: 62px; right: 8px; gap: 8px; }
   .control-group input[type=range] { width: 100px; }
   .big-btn { padding: 8px 14px; font-size: 0.8rem; }
+  .hint { display: none; }
 }
 </style>
