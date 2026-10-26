@@ -1,43 +1,13 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>🪐 宝贝的太阳系</title>
-  <link rel="stylesheet" href="src/style.css" />
-</head>
-<body>
-  <!-- 主标题 -->
-  <div class="title-bar">
-    <h1>🪐 宝贝的太阳系</h1>
-    <p class="subtitle">点一点星球，转一转看看！</p>
-  </div>
-
-  <!-- Canvas 舞台 -->
-  <canvas id="stage"></canvas>
-
-  <!-- 控制面板 -->
-  <div class="controls">
-    <div class="control-group">
-      <label for="speedSlider">⏩ 公转速度</label>
-      <input type="range" id="speedSlider" min="0" max="5" step="0.1" value="1" />
-      <span id="speedValue">1x</span>
-    </div>
-    <button id="btnRocket" class="big-btn">🚀 发射火箭</button>
-    <button id="btnReset" class="big-btn">🔄 重置</button>
-  </div>
-
-  <!-- 行星信息卡片 -->
-  <div id="infoCard" class="info-card hidden">
-    <div class="info-icon" id="infoIcon">🪐</div>
-    <h2 id="infoName">???</h2>
-    <p id="infoDesc">点击星球看介绍~</p>
-    <button id="infoClose">✖️</button>
-  </div>
-
-  <!-- 底部星球快捷按钮 -->
-  <div class="planet-chips" id="planetChips"></div>
-
-  <script src="src/solar.js"></script>
-</body>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>solar-system</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
 </html>
