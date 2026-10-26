@@ -16,22 +16,22 @@ let sunMesh, sunLight, moonMesh, rocketGroup
 let starsGroup
 
 // ===== 行星数据（3D 单位，人为分层，保证在视野内） =====
-// 轨道半径是 Three.js 世界单位，相机距离 ~250，FOV 50
-const SUN_DATA = { radius: 12, color: 0xffcc33 }
+// 星球整体放大 1.8x，轨道放大 1.4x，保证视野内全部可见
+const SUN_DATA = { radius: 16, color: 0xffcc33 }
 
 const planets = reactive([
-  { name: '水星', color: 0xb0a8a0, size: 1.2, orbit: 22, period: 0.24, emoji: '☿️', desc: '最小最快的行星，一年只有88天！', angle: Math.random() * Math.PI * 2 },
-  { name: '金星', color: 0xe8c875, size: 1.8, orbit: 32, period: 0.62, emoji: '♀️', desc: '夜空中最亮的星星，傍晚就能看到它~', angle: Math.random() * Math.PI * 2 },
-  { name: '地球', color: 0x4aa3ff, size: 2.0, orbit: 42, period: 1.0,  emoji: '🌍', desc: '这是我们的家！蓝色的水球🌊', angle: Math.random() * Math.PI * 2, hasMoon: true },
-  { name: '火星', color: 0xe55a3a, size: 1.5, orbit: 52, period: 1.88, emoji: '🔴', desc: '红色的星球，上面有最高的山！', angle: Math.random() * Math.PI * 2 },
-  { name: '木星', color: 0xe8a85c, size: 4.5, orbit: 72, period: 11.86, emoji: '♃', desc: '最大的行星，条纹好多，还有个大红斑！', angle: Math.random() * Math.PI * 2 },
-  { name: '土星', color: 0xe8d088, size: 3.8, orbit: 92, period: 29.46, emoji: '🪐', desc: '有漂亮光环的行星！最特别的那个✨', angle: Math.random() * Math.PI * 2, hasRing: true },
-  { name: '天王星', color: 0x9ce0e8, size: 2.8, orbit: 110, period: 84.0,  emoji: '♅', desc: '躺着转的冰蓝行星，好Q哦！', angle: Math.random() * Math.PI * 2 },
-  { name: '海王星', color: 0x3a7ae0, size: 2.6, orbit: 128, period: 164.8, emoji: '♆', desc: '最远的行星，深蓝色好漂亮！', angle: Math.random() * Math.PI * 2 }
+  { name: '水星', color: 0xb0a8a0, size: 2.2, orbit: 31, period: 0.24, emoji: '☿️', desc: '最小最快的行星，一年只有88天！', angle: Math.random() * Math.PI * 2 },
+  { name: '金星', color: 0xe8c875, size: 3.2, orbit: 45, period: 0.62, emoji: '♀️', desc: '夜空中最亮的星星，傍晚就能看到它~', angle: Math.random() * Math.PI * 2 },
+  { name: '地球', color: 0x4aa3ff, size: 3.6, orbit: 59, period: 1.0,  emoji: '🌍', desc: '这是我们的家！蓝色的水球🌊', angle: Math.random() * Math.PI * 2, hasMoon: true },
+  { name: '火星', color: 0xe55a3a, size: 2.7, orbit: 73, period: 1.88, emoji: '🔴', desc: '红色的星球，上面有最高的山！', angle: Math.random() * Math.PI * 2 },
+  { name: '木星', color: 0xe8a85c, size: 8.1, orbit: 101, period: 11.86, emoji: '♃', desc: '最大的行星，条纹好多，还有个大红斑！', angle: Math.random() * Math.PI * 2 },
+  { name: '土星', color: 0xe8d088, size: 6.8, orbit: 129, period: 29.46, emoji: '🪐', desc: '有漂亮光环的行星！最特别的那个✨', angle: Math.random() * Math.PI * 2, hasRing: true },
+  { name: '天王星', color: 0x9ce0e8, size: 5.0, orbit: 154, period: 84.0,  emoji: '♅', desc: '躺着转的冰蓝行星，好Q哦！', angle: Math.random() * Math.PI * 2 },
+  { name: '海王星', color: 0x3a7ae0, size: 4.7, orbit: 179, period: 164.8, emoji: '♆', desc: '最远的行星，深蓝色好漂亮！', angle: Math.random() * Math.PI * 2 }
 ])
 
 // 最远轨道半径，用于保证可见
-const MAX_ORBIT = 128
+const MAX_ORBIT = 179
 
 // ===== 响应式 UI 状态 =====
 const speedMultiplier = ref(1)
@@ -71,7 +71,7 @@ function initThree() {
 
   // Camera（透视投影，距离够远保证所有星球在视野内）
   camera = new THREE.PerspectiveCamera(50, W / H, 0.1, 1000)
-  const camDist = MAX_ORBIT * 2.2 + 30 // 相机距离 ≈ 292，远大于最远轨道
+  const camDist = MAX_ORBIT * 2.2 + 30 // 相机距离 ≈ 424，远大于最远轨道 179
   camera.position.set(camDist * 0.55, camDist * 0.5, camDist * 0.55) // 斜角俯视
   camera.lookAt(0, 0, 0)
 
@@ -95,17 +95,17 @@ function initThree() {
   controls = new OrbitControls(camera, renderer.domElement)
   controls.enableDamping = true
   controls.dampingFactor = 0.08
-  controls.minDistance = 40        // 最近能缩到多近
-  controls.maxDistance = 600      // 最远能拉到多远
+  controls.minDistance = 50        // 最近能缩到多近
+  controls.maxDistance = 900      // 最远能拉到多远
   controls.maxPolarAngle = Math.PI // 允许从下往上看
   controls.autoRotate = false
   controls.target.set(0, 0, 0)
 
-  // 光源
-  sunLight = new THREE.PointLight(0xffffff, 2.5, 0, 0) // 点光源（太阳发光）
+  // 光源（太阳变大了，光照也加强）
+  sunLight = new THREE.PointLight(0xfff4cc, 4.0, 0, 2) // 暖白色点光源，衰减更柔和
   sunLight.position.set(0, 0, 0)
   scene.add(sunLight)
-  scene.add(new THREE.AmbientLight(0x404060, 0.35)) // 弱环境光，背光面不会全黑
+  scene.add(new THREE.AmbientLight(0x304080, 0.5)) // 环境光加强，背光面不会太暗
 
   clock = new THREE.Clock()
 
@@ -114,21 +114,29 @@ function initThree() {
 
 // ===== 构建场景：太阳、轨道、行星、星空 =====
 function buildScene() {
-  // --- 太阳 ---
-  const sunGeo = new THREE.SphereGeometry(SUN_DATA.radius, 48, 48)
-  const sunMat = new THREE.MeshBasicMaterial({ color: SUN_DATA.color })
+  // --- 太阳：Canvas 纹理 + 多层脉动光晕 ---
+  const sunTexture = createSunTexture()
+  const sunGeo = new THREE.SphereGeometry(SUN_DATA.radius, 64, 64)
+  const sunMat = new THREE.MeshBasicMaterial({ map: sunTexture, color: 0xffffff })
   sunMesh = new THREE.Mesh(sunGeo, sunMat)
   scene.add(sunMesh)
 
-  // 太阳光晕（更大的半透明球）
-  const haloGeo = new THREE.SphereGeometry(SUN_DATA.radius * 1.5, 32, 32)
-  const haloMat = new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.25, side: THREE.BackSide })
-  scene.add(new THREE.Mesh(haloGeo, haloMat))
+  // 三层光晕（从内到外：橙→黄→淡金，逐层放大）
+  const glowConfigs = [
+    { scale: 1.3, color: 0xff6600, opacity: 0.35 },
+    { scale: 1.8, color: 0xffaa33, opacity: 0.22 },
+    { scale: 2.6, color: 0xffdd77, opacity: 0.12 }
+  ]
+  glowConfigs.forEach(cfg => {
+    const gGeo = new THREE.SphereGeometry(SUN_DATA.radius * cfg.scale, 32, 32)
+    const gMat = new THREE.MeshBasicMaterial({ color: cfg.color, transparent: true, opacity: cfg.opacity, side: THREE.BackSide, depthWrite: false })
+    scene.add(new THREE.Mesh(gGeo, gMat))
+  })
 
-  // --- 轨道线（虚线环） ---
+  // --- 轨道线（更亮更清晰） ---
   for (const p of planets) {
-    const orbitGeo = new THREE.RingGeometry(p.orbit - 0.08, p.orbit + 0.08, 128)
-    const orbitMat = new THREE.MeshBasicMaterial({ color: 0x8888aa, side: THREE.DoubleSide, transparent: true, opacity: 0.25 })
+    const orbitGeo = new THREE.RingGeometry(p.orbit - 0.15, p.orbit + 0.15, 128)
+    const orbitMat = new THREE.MeshBasicMaterial({ color: 0xaaddff, side: THREE.DoubleSide, transparent: true, opacity: 0.6, depthWrite: false })
     const ring = new THREE.Mesh(orbitGeo, orbitMat)
     ring.rotation.x = Math.PI / 2
     scene.add(ring)
@@ -137,15 +145,15 @@ function buildScene() {
   // --- 行星 ---
   for (const p of planets) {
     const geo = new THREE.SphereGeometry(p.size, 48, 48)
-    const mat = new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.7, metalness: 0.1 })
+    const mat = new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.65, metalness: 0.15 })
     const mesh = new THREE.Mesh(geo, mat)
     mesh.userData = { planet: p }
     scene.add(mesh)
 
     // 土星环
     if (p.hasRing) {
-      const ringGeo = new THREE.RingGeometry(p.size * 1.5, p.size * 2.2, 64)
-      const ringMat = new THREE.MeshBasicMaterial({ color: 0xe0c880, side: THREE.DoubleSide, transparent: true, opacity: 0.7 })
+      const ringGeo = new THREE.RingGeometry(p.size * 1.6, p.size * 2.4, 64)
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0xe8d8a0, side: THREE.DoubleSide, transparent: true, opacity: 0.85, depthWrite: false })
       const ring = new THREE.Mesh(ringGeo, ringMat)
       ring.rotation.x = Math.PI / 2.2
       mesh.add(ring)
@@ -153,40 +161,42 @@ function buildScene() {
 
     // 月球（地球子对象）
     if (p.hasMoon) {
-      const moonGeo = new THREE.SphereGeometry(0.5, 24, 24)
+      const moonGeo = new THREE.SphereGeometry(0.8, 24, 24)
       const moonMat = new THREE.MeshStandardMaterial({ color: 0xddddcc, roughness: 0.9 })
       moonMesh = new THREE.Mesh(moonGeo, moonMat)
-      moonMesh.position.set(p.orbit * 0 + 5, 0, p.orbit * 0 + 5)
+      moonMesh.position.set(0, 0, p.size + 2.5)
       mesh.add(moonMesh)
-      // 在 planet 上存月球子对象引用，后面手动更新位置
       p._moonParent = mesh
     }
 
     // 星球名称标签（CSS2D）
     const labelDiv = document.createElement('div')
     labelDiv.textContent = p.name
-    labelDiv.style.cssText = 'color:#ffd36b;font-size:12px;font-weight:600;text-shadow:0 0 6px rgba(0,0,0,0.8);pointer-events:none;'
+    labelDiv.style.cssText = 'color:#ffe08a;font-size:14px;font-weight:700;text-shadow:0 0 8px rgba(0,0,0,0.9);pointer-events:none;'
     const label = new CSS2DObject(labelDiv)
-    label.position.set(0, p.size + 1.5, 0)
+    label.position.set(0, p.size + 2, 0)
     mesh.add(label)
 
     planetMeshes.push(mesh)
   }
 
-  // --- 星空（球壳粒子） ---
-  const starCount = 4000
+  // --- 星空（更柔和，不抢眼） ---
+  const starCount = 1500
   const starGeo = new THREE.BufferGeometry()
   const positions = new Float32Array(starCount * 3)
+  const sizes = new Float32Array(starCount)
   for (let i = 0; i < starCount; i++) {
-    const r = 450 + Math.random() * 200 // 分布在 450-650 半径的球壳上
+    const r = 450 + Math.random() * 250
     const theta = Math.random() * Math.PI * 2
     const phi = Math.acos(2 * Math.random() - 1)
     positions[i*3]   = r * Math.sin(phi) * Math.cos(theta)
     positions[i*3+1] = r * Math.cos(phi)
     positions[i*3+2] = r * Math.sin(phi) * Math.sin(theta)
+    sizes[i] = 0.3 + Math.random() * 0.9 // 大小有差异，有远有近
   }
   starGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.5, sizeAttenuation: false, transparent: true, opacity: 0.85 })
+  starGeo.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
+  const starMat = new THREE.PointsMaterial({ color: 0xccddff, size: 0.9, sizeAttenuation: true, transparent: true, opacity: 0.45, depthWrite: false })
   starsGroup = new THREE.Points(starGeo, starMat)
   scene.add(starsGroup)
 
@@ -194,6 +204,27 @@ function buildScene() {
   rocketGroup = buildRocket()
   rocketGroup.visible = false
   scene.add(rocketGroup)
+}
+
+// 用 Canvas 画一个径向渐变贴图给太阳，效果比纯色好
+function createSunTexture() {
+  const size = 256
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2)
+  grad.addColorStop(0.0, '#ffffff')
+  grad.addColorStop(0.15, '#fff8a0')
+  grad.addColorStop(0.4, '#ffcc33')
+  grad.addColorStop(0.75, '#ff8822')
+  grad.addColorStop(1.0, '#cc4400')
+  ctx.fillStyle = grad
+  ctx.beginPath()
+  ctx.arc(size/2, size/2, size/2 - 2, 0, Math.PI * 2)
+  ctx.fill()
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.colorSpace = THREE.SRGBColorSpace
+  return tex
 }
 
 // 构建 3D 火箭模型
